@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
+import React, { useEffect, useState} from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from "react-router-dom";
 import { getAllStudents } from '../../../redux/studentRelated/studentHandle';
 import { deleteUser } from '../../../redux/userRelated/userHandle';
 import {
-    Paper, Box, IconButton
+    Paper, Box, IconButton, TextField, TableSortLabel, Typography
 } from '@mui/material';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import { BlackButton, BlueButton, GreenButton } from '../../../components/buttonStyles';
@@ -12,10 +12,8 @@ import TableTemplate from '../../../components/TableTemplate';
 import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import SpeedDialTemplate from '../../../components/SpeedDialTemplate';
 
-import * as React from 'react';
 import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
-// import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { KeyboardArrowUp, KeyboardArrowDown } from '@mui/icons-material';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
 import Grow from '@mui/material/Grow';
@@ -25,11 +23,14 @@ import MenuList from '@mui/material/MenuList';
 import Popup from '../../../components/Popup';
 
 const ShowStudents = () => {
-
-    const navigate = useNavigate()
+    const navigate = useNavigate();
     const dispatch = useDispatch();
     const { studentsList, loading, error, response } = useSelector((state) => state.student);
-    const { currentUser } = useSelector(state => state.user)
+    const { currentUser } = useSelector(state => state.user);
+
+    const [searchTerm, setSearchTerm] = useState("");
+    const [order, setOrder] = useState('asc'); // 'asc' or 'desc'
+    const [orderBy, setOrderBy] = useState('name'); // default sort column
 
     useEffect(() => {
         dispatch(getAllStudents(currentUser._id));
@@ -39,36 +40,85 @@ const ShowStudents = () => {
         console.log(error);
     }
 
-    const [showPopup, setShowPopup] = React.useState(false);
-    const [message, setMessage] = React.useState("");
+    const [showPopup, setShowPopup] = useState(false);
+    const [message, setMessage] = useState("");
 
     const deleteHandler = (deleteID, address) => {
-        console.log(deleteID);
-        console.log(address);
-        setMessage("Sorry the delete function has been disabled for now.")
-        setShowPopup(true)
+        if (window.confirm("Are you sure you want to delete this student?")) {
+            dispatch(deleteUser(deleteID, address))
+                .then(() => {
+                    dispatch(getAllStudents(currentUser._id));
+                    setMessage("Student deleted successfully.");
+                    setShowPopup(true);
+                })
+                .catch((err) => {
+                    setMessage("Failed to delete student.");
+                    setShowPopup(true);
+                });
+        }
+    };
 
-        // dispatch(deleteUser(deleteID, address))
-        //     .then(() => {
-        //         dispatch(getAllStudents(currentUser._id));
-        //     })
-    }
+    // Sort handler: toggle asc/desc on column header click
+    const handleRequestSort = (property) => {
+        const isAsc = orderBy === property && order === 'asc';
+        setOrder(isAsc ? 'desc' : 'asc');
+        setOrderBy(property);
+    };
 
+    // Sorting function
+    const stableSort = (array, comparator) => {
+        const stabilizedThis = array.map((el, index) => [el, index]);
+        stabilizedThis.sort((a, b) => {
+            const orderRes = comparator(a[0], b[0]);
+            if (orderRes !== 0) return orderRes;
+            return a[1] - b[1];
+        });
+        return stabilizedThis.map((el) => el[0]);
+    };
+
+    const getComparator = (order, orderBy) => {
+        return order === 'desc'
+            ? (a, b) => descendingComparator(a, b, orderBy)
+            : (a, b) => -descendingComparator(a, b, orderBy);
+    };
+
+    const descendingComparator = (a, b, orderBy) => {
+        if (!a[orderBy]) return 1; // handle undefined/null
+        if (!b[orderBy]) return -1;
+        if (b[orderBy] < a[orderBy]) return -1;
+        if (b[orderBy] > a[orderBy]) return 1;
+        return 0;
+    };
+
+    // Columns definition with sorting enabled
     const studentColumns = [
-        { id: 'name', label: 'Name', minWidth: 170 },
-        { id: 'rollNum', label: 'Roll Number', minWidth: 100 },
-        { id: 'sclassName', label: 'Class', minWidth: 170 },
-    ]
+        { id: 'name', label: 'Name', minWidth: 170, sortable: true },
+        { id: 'rollNum', label: 'Roll Number', minWidth: 100, sortable: true },
+        { id: 'sclassName', label: 'Class', minWidth: 170, sortable: true },
+    ];
 
-    const studentRows = studentsList && studentsList.length > 0 && studentsList.map((student) => {
-        return {
-            name: student.name,
-            rollNum: student.rollNum,
-            sclassName: student.sclassName.sclassName,
-            id: student._id,
-        };
-    })
+    // Prepare student rows
+    const studentRows = studentsList?.map((student) => ({
+        name: student.name,
+        rollNum: student.rollNum,
+        sclassName: student.sclassName?.sclassName || '',
+        id: student._id,
+    })) || [];
 
+    // Filter rows by search term (case insensitive, matches any column)
+    const filteredRows = studentRows.filter(row => {
+        const term = searchTerm.toLowerCase();
+        return (
+            row.name.toLowerCase().includes(term) ||
+            row.rollNum.toString().toLowerCase().includes(term) ||
+            row.sclassName.toLowerCase().includes(term)
+        );
+    });
+
+    // Apply sorting to filtered rows
+    const sortedRows = stableSort(filteredRows, getComparator(order, orderBy));
+
+    // The button group and actions are unchanged
     const StudentButtonHaver = ({ row }) => {
         const options = ['Take Attendance', 'Provide Marks'];
 
@@ -77,19 +127,11 @@ const ShowStudents = () => {
         const [selectedIndex, setSelectedIndex] = React.useState(0);
 
         const handleClick = () => {
-            console.info(`You clicked ${options[selectedIndex]}`);
             if (selectedIndex === 0) {
-                handleAttendance();
+                navigate("/Admin/students/student/attendance/" + row.id);
             } else if (selectedIndex === 1) {
-                handleMarks();
+                navigate("/Admin/students/student/marks/" + row.id);
             }
-        };
-
-        const handleAttendance = () => {
-            navigate("/Admin/students/student/attendance/" + row.id)
-        }
-        const handleMarks = () => {
-            navigate("/Admin/students/student/marks/" + row.id)
         };
 
         const handleMenuItemClick = (event, index) => {
@@ -105,9 +147,9 @@ const ShowStudents = () => {
             if (anchorRef.current && anchorRef.current.contains(event.target)) {
                 return;
             }
-
             setOpen(false);
         };
+
         return (
             <>
                 <IconButton onClick={() => deleteHandler(row.id, "Student")}>
@@ -131,23 +173,11 @@ const ShowStudents = () => {
                             {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
                         </BlackButton>
                     </ButtonGroup>
-                    <Popper
-                        sx={{
-                            zIndex: 1,
-                        }}
-                        open={open}
-                        anchorEl={anchorRef.current}
-                        role={undefined}
-                        transition
-                        disablePortal
-                    >
+                    <Popper open={open} anchorEl={anchorRef.current} role={undefined} transition disablePortal>
                         {({ TransitionProps, placement }) => (
                             <Grow
                                 {...TransitionProps}
-                                style={{
-                                    transformOrigin:
-                                        placement === 'bottom' ? 'center top' : 'center bottom',
-                                }}
+                                style={{ transformOrigin: placement === 'bottom' ? 'center top' : 'center bottom' }}
                             >
                                 <Paper>
                                     <ClickAwayListener onClickAway={handleClose}>
@@ -155,7 +185,6 @@ const ShowStudents = () => {
                                             {options.map((option, index) => (
                                                 <MenuItem
                                                     key={option}
-                                                    disabled={index === 2}
                                                     selected={index === selectedIndex}
                                                     onClick={(event) => handleMenuItemClick(event, index)}
                                                 >
@@ -184,28 +213,62 @@ const ShowStudents = () => {
         },
     ];
 
+    // Custom TableHeader to add sorting UI to TableTemplate (you may need to adjust this to your TableTemplate API)
+    // If TableTemplate does not support sorting directly, you can build your own table here.
+
     return (
         <>
-            {loading ?
+            {loading ? (
                 <div>Loading...</div>
-                :
+            ) : (
                 <>
-                    {response ?
+                    {response ? (
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
                             <GreenButton variant="contained" onClick={() => navigate("/Admin/addstudents")}>
                                 Add Students
                             </GreenButton>
                         </Box>
-                        :
-                        <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-                            {Array.isArray(studentsList) && studentsList.length > 0 &&
-                                <TableTemplate buttonHaver={StudentButtonHaver} columns={studentColumns} rows={studentRows} />
-                            }
+                    ) : (
+                        <Paper sx={{ width: '100%', overflow: 'hidden', padding: 2 }}>
+                            {/* Search Input */}
+                            <Box sx={{ mb: 2 }}>
+                                <TextField
+                                    label="Search Students"
+                                    variant="outlined"
+                                    size="small"
+                                    fullWidth
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </Box>
+
+                            {sortedRows.length > 0 ? (
+                                <TableTemplate
+                                    buttonHaver={StudentButtonHaver}
+                                    columns={studentColumns.map(col => ({
+                                        ...col,
+                                        // Pass sorting UI to column header if you control TableTemplate's headers
+                                        sortLabel: col.sortable ? (
+                                            <TableSortLabel
+                                                active={orderBy === col.id}
+                                                direction={orderBy === col.id ? order : 'asc'}
+                                                onClick={() => handleRequestSort(col.id)}
+                                            >
+                                                {col.label}
+                                            </TableSortLabel>
+                                        ) : col.label
+                                    }))}
+                                    rows={sortedRows}
+                                />
+                            ) : (
+                                <Typography>No students found.</Typography>
+                            )}
+
                             <SpeedDialTemplate actions={actions} />
                         </Paper>
-                    }
+                    )}
                 </>
-            }
+            )}
             <Popup message={message} setShowPopup={setShowPopup} showPopup={showPopup} />
         </>
     );
